@@ -181,9 +181,9 @@ def getAppExt(loops=float(0)):
 
 def getGraphicsControlExt(duration=0.1):
     """ Graphics Control Extension. A sort of header at the start of
-    each image. Specifies transparancy and duration. """
+    each image. Specifies transparency and duration. """
     bb = '\x21\xF9\x04'
-    bb += '\x08'  # no transparancy
+    bb += '\x09'  # transparency
     bb += intToBin( int(duration*100) ) # in 100th of seconds
     bb += '\x00'  # no transparant color
     bb += '\x00'  # end
