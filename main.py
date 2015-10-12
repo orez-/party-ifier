@@ -52,12 +52,15 @@ def party(img_data):
         for c, r in zip(colors, xrange(0, 360, 45))
     ]
 
+    gif_data = StringIO.StringIO()
     images2gif.writeGif(
-        os.path.join('dest', filename),
+        gif_data,
         frames,
         duration=0.0625,
         dither=0,
     )
+    gif_data.seek(0)
+    return gif_data
 
 
 app = flask.Flask(__name__)
@@ -69,7 +72,8 @@ def hello():
         <html>
           <body>
             <form action='result' method='post'>
-              <input name='url' type='text' value='https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png'>
+              <input name='url' style='width: 500px' type='text' value='https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png'>
+              <input type='submit'>
             </form>
           </body>
         </html>
@@ -86,8 +90,8 @@ def result():
         return "Too big"
     data = StringIO.StringIO(img_response.raw.read(content_length))
 
-    party(data)
-    return flask.send_from_directory('dest', filename)
+    gif_data = party(data)
+    return flask.send_file(gif_data, mimetype='image/gif')
 
 
 if __name__ == '__main__':

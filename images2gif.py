@@ -261,7 +261,7 @@ def _writeGifToFile(fp, images, durations, loops):
 
 ## Exposed functions
 
-def writeGif(filename, images, duration=0.1, repeat=True, dither=False, nq=0):
+def writeGif(fp, images, duration=0.1, repeat=True, dither=False, nq=0):
     """ writeGif(filename, images, duration=0.1, repeat=True, dither=False)
 
     Write an animated gif from the specified images.
@@ -344,14 +344,8 @@ def writeGif(filename, images, duration=0.1, repeat=True, dither=False, nq=0):
     else:
         duration = [duration for im in images2]
 
-    # Open file
-    fp = open(filename, 'wb')
-
     # Write
-    try:
-        n = _writeGifToFile(fp, images2, duration, loops)
-    finally:
-        fp.close()
+    _writeGifToFile(fp, images2, duration, loops)
 
 
 def readGif(filename, asNumpy=True):
