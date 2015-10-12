@@ -19,8 +19,7 @@ def tint_image(src, color):
 
 
 def reapply_transparency(im):
-    side = im.width
-    new_image = PIL.Image.new('RGBA', (side, side), (255, 255, 255, 0))
+    new_image = PIL.Image.new('RGBA', im.size, (255, 255, 255, 0))
     new_image.paste(im, (0, 0), mask=im)
     return new_image
 
@@ -41,10 +40,13 @@ def party(img_data, rotate=True, color=True):
 
     im = PIL.Image.open(img_data)
 
-    # Provide enough space to avoid clipping.
-    side = int(max(im.width, im.height) * (2 ** 0.5))
-    new_image = PIL.Image.new('RGBA', (side, side), (255, 255, 255, 0))
-    new_image.paste(im, ((side - im.width) / 2, ((side - im.height) / 2)), mask=im)
+    width, height = im.size
+    if rotate:
+        # Provide enough space to avoid clipping.
+        side = int(max(im.width, im.height) * (2 ** 0.5))
+        width = height = side
+    new_image = PIL.Image.new('RGBA', (width, height), (255, 255, 255, 0))
+    new_image.paste(im, ((width - im.width) / 2, ((height - im.height) / 2)), mask=im)
 
     frames = [new_image] * len(colors)
     if rotate:
