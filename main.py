@@ -94,5 +94,5 @@ def result():
     return flask.send_file(gif_data, mimetype='image/gif')
 
 
-if __name__ == '__main__':
-    app.run()
+# if __name__ == '__main__':
+#     app.run()
