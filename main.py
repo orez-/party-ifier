@@ -9,9 +9,6 @@ import requests
 import images2gif
 
 
-filename = 'TEMP_FILE.gif'
-
-
 def tint_image(src, color):
     color = '#{:x}{:x}{:x}'.format(*color)
     r, g, b, alpha = src.split()
@@ -28,7 +25,7 @@ def reapply_transparency(im):
     return new_image
 
 
-def party(img_data):
+def party(img_data, rotate=True, color=True):
     colors = [
         (252, 88, 91),
         (252, 94, 245),
@@ -39,6 +36,8 @@ def party(img_data):
         (125, 251, 126),
         (252, 205, 127),
     ]
+    rotations = xrange(0, 360, 45)
+    assert len(colors) == len(rotations)
 
     im = PIL.Image.open(img_data)
 
@@ -47,10 +46,13 @@ def party(img_data):
     new_image = PIL.Image.new('RGBA', (side, side), (255, 255, 255, 0))
     new_image.paste(im, ((side - im.width) / 2, ((side - im.height) / 2)), mask=im)
 
-    frames = [
-        reapply_transparency(tint_image(new_image.rotate(-r), color=c)).convert('P')
-        for c, r in zip(colors, xrange(0, 360, 45))
-    ]
+    frames = [new_image] * len(colors)
+    if rotate:
+        frames = (f.rotate(-r) for f, r in zip(frames, rotations))
+    if color:
+        frames = (tint_image(f, color=c) for f, c in zip(frames, colors))
+
+    frames = [reapply_transparency(f).convert('P') for f in frames]
 
     gif_data = StringIO.StringIO()
     images2gif.writeGif(
@@ -66,31 +68,46 @@ def party(img_data):
 app = flask.Flask(__name__)
 app.debug = True
 
+
 @app.route('/', methods=['GET'])
 def hello():
+    default_pic = 'https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png'
     return '''
         <html>
           <body>
             <form action='result' method='post'>
-              <input name='url' style='width: 500px' type='text' value='https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png'>
+              <h3>Party-ifier!</h3>
+              <input name='url' style='width: 500px' type='text' value='{default_pic}'><br>
+              <label><input name='rotate' type='checkbox' checked> Rotate</label><br>
+              <label><input name='color' type='checkbox' checked> Color</label><br>
               <input type='submit'>
             </form>
           </body>
         </html>
-    '''
+    '''.format(default_pic=default_pic)
+
 
 @app.route('/result', methods=['POST'])
 def result():
     MAX_LENGTH = 1 * 1000 * 1000
+
     url = flask.request.form['url']
+    color = 'color' in flask.request.form
+    rotate = 'rotate' in flask.request.form
 
     img_response = requests.get(url, stream=True)
     content_length = int(img_response.headers['Content-Length'])
     if int(content_length) > MAX_LENGTH:
         return "Too big"
+
     data = StringIO.StringIO(img_response.raw.read(content_length))
 
-    gif_data = party(data)
+    if not color and not rotate:
+        # Why are you even here then.
+        mimetype = img_response.headers['Content-Type']
+        return flask.send_file(data, mimetype=mimetype)
+
+    gif_data = party(data, color=color, rotate=rotate)
     return flask.send_file(gif_data, mimetype='image/gif')
 
 
