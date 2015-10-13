@@ -18,13 +18,13 @@ def tint_image(src, color):
     return result
 
 
-def reapply_transparency(im):
-    new_image = PIL.Image.new('RGBA', im.size, (255, 255, 255, 0))
+def reapply_transparency(im, alpha_color=(255, 255, 255, 0)):
+    new_image = PIL.Image.new('RGBA', im.size, alpha_color)
     new_image.paste(im, (0, 0), mask=im)
     return new_image
 
 
-def party(img_data, rotate=True, color=True):
+def party(img_data, rotate, color, fit):
     colors = [
         (252, 88, 91),
         (252, 94, 245),
@@ -49,10 +49,21 @@ def party(img_data, rotate=True, color=True):
     new_image.paste(im, ((width - im.width) / 2, ((height - im.height) / 2)), mask=im)
 
     frames = [new_image] * len(colors)
-    if rotate:
-        frames = (f.rotate(-r) for f, r in zip(frames, rotations))
     if color:
-        frames = (tint_image(f, color=c) for f, c in zip(frames, colors))
+        frames = [tint_image(f, color=c) for f, c in zip(frames, colors)]
+    if rotate:
+        frames = [f.rotate(-r) for f, r in zip(frames, rotations)]
+        if fit:
+            # Since we happen to be rotating at 45 degree angles we could
+            # get away with only checking the first two bounding boxes,
+            # but for the sake of simplicity and completeness (at the
+            # cost of performance) we'll check all of them.
+            to_crop = min(reapply_transparency(f, (0, 0, 0, 0)).getbbox()[0] for f in frames)
+
+            frames = [
+                f.crop((to_crop, to_crop, f.width - to_crop, f.height - to_crop))
+                for f in frames
+            ]
 
     frames = [reapply_transparency(f).convert('P') for f in frames]
 
@@ -80,8 +91,9 @@ def hello():
             <form action='result' method='post'>
               <h3>Party-ifier!</h3>
               <input name='url' style='width: 500px' type='text' value='{default_pic}'><br>
-              <label><input name='rotate' type='checkbox' checked> Rotate</label><br>
               <label><input name='color' type='checkbox' checked> Color</label><br>
+              <label><input name='rotate' type='checkbox' checked> Rotate</label><br>
+              <label><input name='fit' type='checkbox' checked> Smart Fit</label><br>
               <input type='submit'>
             </form>
           </body>
@@ -96,6 +108,7 @@ def result():
     url = flask.request.form['url']
     color = 'color' in flask.request.form
     rotate = 'rotate' in flask.request.form
+    fit = 'fit' in flask.request.form
 
     img_response = requests.get(url, stream=True)
     content_length = int(img_response.headers['Content-Length'])
@@ -109,7 +122,7 @@ def result():
         mimetype = img_response.headers['Content-Type']
         return flask.send_file(data, mimetype=mimetype)
 
-    gif_data = party(data, color=color, rotate=rotate)
+    gif_data = party(data, color=color, rotate=rotate, fit=fit)
     return flask.send_file(gif_data, mimetype='image/gif')
 
 
