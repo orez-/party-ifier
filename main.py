@@ -46,7 +46,8 @@ def party(img_data, rotate, color, fit):
         side = int(max(im.width, im.height) * (2 ** 0.5))
         width = height = side
     new_image = PIL.Image.new('RGBA', (width, height), (255, 255, 255, 0))
-    new_image.paste(im, ((width - im.width) / 2, ((height - im.height) / 2)), mask=im)
+    mask = im if im.mode == 'RGBA' else None
+    new_image.paste(im, ((width - im.width) / 2, ((height - im.height) / 2)), mask=mask)
 
     frames = [new_image] * len(colors)
     if color:
