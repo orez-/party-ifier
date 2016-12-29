@@ -1,8 +1,8 @@
+import io
 import os.path
 
 import PIL.Image
 import PIL.ImageOps
-import StringIO
 import flask
 import requests
 
@@ -35,7 +35,7 @@ def party(img_data, rotate, color, fit):
         (125, 251, 126),
         (252, 205, 127),
     ]
-    rotations = xrange(0, 360, 45)
+    rotations = range(0, 360, 45)
     assert len(colors) == len(rotations)
 
     im = PIL.Image.open(img_data)
@@ -47,7 +47,7 @@ def party(img_data, rotate, color, fit):
         width = height = side
     new_image = PIL.Image.new('RGBA', (width, height), (255, 255, 255, 0))
     mask = im if im.mode == 'RGBA' else None
-    new_image.paste(im, ((width - im.width) / 2, ((height - im.height) / 2)), mask=mask)
+    new_image.paste(im, ((width - im.width) // 2, ((height - im.height) // 2)), mask=mask)
 
     frames = [new_image] * len(colors)
     if color:
@@ -68,7 +68,7 @@ def party(img_data, rotate, color, fit):
 
     frames = [reapply_transparency(f).convert('P') for f in frames]
 
-    gif_data = StringIO.StringIO()
+    gif_data = io.BytesIO()
     images2gif.writeGif(
         gif_data,
         frames,
@@ -116,7 +116,7 @@ def result():
     if int(content_length) > MAX_LENGTH:
         return "Too big"
 
-    data = StringIO.StringIO(img_response.raw.read(content_length))
+    data = io.BytesIO(img_response.raw.read(content_length))
 
     if not color and not rotate:
         # Why are you even here then.
