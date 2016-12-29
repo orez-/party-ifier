@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-#   Copyright (c) 2010, Almar Klein, Ant1, Marius van Voorden
+#   Copyright (C) 2012, Almar Klein, Ant1, Marius van Voorden
 #
 #   This code is subject to the (new) BSD license:
 #
@@ -32,6 +32,9 @@ Use writeGif to write a series of numpy arrays or PIL images as an
 animated GIF. Use readGif to read an animated gif as a series of numpy
 arrays.
 
+Note that since July 2004, all patents on the LZW compression patent have
+expired. Therefore the GIF format may now be used freely.
+
 Acknowledgements
 ----------------
 
@@ -45,19 +48,28 @@ Many thanks to Marius van Voorden for porting the NeuQuant quantization
 algorithm of Anthony Dekker to Python (See the NeuQuant class for its
 license).
 
+Many thanks to Alex Robinson for implementing the concept of subrectangles,
+which (depending on image content) can give a very significant reduction in
+file size.
+
 This code is based on gifmaker (in the scripts folder of the source
 distribution of PIL)
 
-Some implementation details are ased on gif file structure as provided
-by wikipedia.
+
+Useful links
+-------------
+  * http://tronche.com/computer-graphics/gif/
+  * http://en.wikipedia.org/wiki/Graphics_Interchange_Format
+  * http://www.w3.org/Graphics/GIF/spec-gif89a.txt
 
 """
+# todo: This module should be part of imageio (or at least based on)
 
-import os
+import os, time
 
 try:
     import PIL
-    from PIL import Image, ImageChops
+    from PIL import Image
     from PIL.GifImagePlugin import getheader, getdata
 except ImportError:
     PIL = None
@@ -67,10 +79,13 @@ try:
 except ImportError:
     np = None
 
-try:
-    from scipy.spatial import cKDTree
-except ImportError:
-    cKDTree = None
+def get_cKDTree():
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        cKDTree = None
+    return cKDTree
+
 
 # getheader gives a 87a header and a color palette (two elements in a list).
 # getdata()[0] gives the Image Descriptor up to (including) "LZW min code size".
@@ -121,155 +136,382 @@ def checkImages(images):
 
 def intToBin(i):
     """ Integer to two bytes """
-    # devide in two parts (bytes)
-    i1 = i % 256
-    i2 = int( i/256)
     # make string (little endian)
-    return chr(i1) + chr(i2)
+    return i.to_bytes(2, byteorder='little')
 
 
-def getheaderAnim(im):
-    """ Animation header. To replace the getheader()[0] """
-    bb = "GIF89a"
-    bb += intToBin(im.size[0])
-    bb += intToBin(im.size[1])
-    bb += "\x87\x00\x00"
-    return bb
+class GifWriter:
+    """ GifWriter()
 
+    Class that contains methods for helping write the animated GIF file.
 
-def getImageDescriptor(im):
-    """ Used for the local color table properties per image.
-    Otherwise global color table applies to all frames irrespective of
-    wether additional colours comes in play that require a redefined palette
-    Still a maximum of 256 color per frame, obviously.
-
-    Written by Ant1 on 2010-08-22
     """
-    bb = '\x2C' # Image separator,
-    bb += intToBin( 0 ) # Left position
-    bb += intToBin( 0 ) # Top position
-    bb += intToBin( im.size[0] ) # image width
-    bb += intToBin( im.size[1] ) # image height
-    bb += '\x87' # packed field : local color table flag1, interlace0, sorted table0, reserved00, lct size111=7=2^(7+1)=256.
-    # LZW minimum size code now comes later, begining of [image data] blocks
-    return bb
+
+    def getheaderAnim(self, im):
+        """ getheaderAnim(im)
+
+        Get animation header. To replace PILs getheader()[0]
+
+        """
+        bb = b'GIF89a'
+        bb += intToBin(im.size[0])
+        bb += intToBin(im.size[1])
+        bb += b'\x87\x00\x00'
+        return bb
 
 
-#def getAppExt(loops=float('inf')):
-#compile error commented by zcwang
-def getAppExt(loops=float(0)):
-    """ Application extention. Part that specifies amount of loops.
-    If loops is inf, it goes on infinitely.
-    """
-    if loops == 0:
-        loops = 2**16-1
-        #bb = "" # application extension should not be used
-                # (the extension interprets zero loops
-                # to mean an infinite number of loops)
-                # Mmm, does not seem to work
-    if True:
-        bb = "\x21\xFF\x0B"  # application extension
-        bb += "NETSCAPE2.0"
-        bb += "\x03\x01"
-#        if loops == float('inf'):
-        if loops == float(0):
+    def getImageDescriptor(self, im, xy=None):
+        """ getImageDescriptor(im, xy=None)
+
+        Used for the local color table properties per image.
+        Otherwise global color table applies to all frames irrespective of
+        whether additional colors comes in play that require a redefined
+        palette. Still a maximum of 256 color per frame, obviously.
+
+        Written by Ant1 on 2010-08-22
+        Modified by Alex Robinson in Janurary 2011 to implement subrectangles.
+
+        """
+
+        # Default use full image and place at upper left
+        if xy is None:
+            xy  = (0,0)
+
+        # Image separator,
+        bb = b'\x2C'
+
+        # Image position and size
+        bb += intToBin( xy[0] ) # Left position
+        bb += intToBin( xy[1] ) # Top position
+        bb += intToBin( im.size[0] ) # image width
+        bb += intToBin( im.size[1] ) # image height
+
+        # packed field: local color table flag1, interlace0, sorted table0,
+        # reserved00, lct size111=7=2^(7+1)=256.
+        bb += b'\x87'
+
+        # LZW minimum size code now comes later, begining of [image data] blocks
+        return bb
+
+
+    def getAppExt(self, loops=float('inf')):
+        """ getAppExt(loops=float('inf'))
+
+        Application extension. This part specifies the amount of loops.
+        If loops is 0 or inf, it goes on infinitely.
+
+        """
+
+        if loops == 0 or loops==float('inf'):
             loops = 2**16-1
-        bb += intToBin(loops)
-        bb += '\x00'  # end
-    return bb
+        bb = b""
+        if loops != 1: #omit the extension if we would like a nonlooping gif
+            bb += b"\x21\xFF\x0B"  # application extension
+            bb += b"NETSCAPE2.0"
+            bb += b"\x03\x01"
+            bb += intToBin(loops)
+            bb += b'\x00'  # end
+        return bb
 
 
-def getGraphicsControlExt(duration=0.1):
-    """ Graphics Control Extension. A sort of header at the start of
-    each image. Specifies transparency and duration. """
-    bb = '\x21\xF9\x04'
-    bb += '\x09'  # transparency
-    bb += intToBin( int(duration*100) ) # in 100th of seconds
-    bb += '\x00'  # no transparant color
-    bb += '\x00'  # end
-    return bb
+    def getGraphicsControlExt(self, duration=0.1, dispose=2,transparent_flag=0,transparency_index=0):
+        """ getGraphicsControlExt(duration=0.1, dispose=2)
+
+        Graphics Control Extension. A sort of header at the start of
+        each image. Specifies duration and transparancy.
+
+        Dispose
+        -------
+          * 0 - No disposal specified.
+          * 1 - Do not dispose. The graphic is to be left in place.
+          * 2 - Restore to background color. The area used by the graphic
+            must be restored to the background color.
+          * 3 - Restore to previous. The decoder is required to restore the
+            area overwritten by the graphic with what was there prior to
+            rendering the graphic.
+          * 4-7 -To be defined.
+
+        """
+
+        bb = b'\x21\xF9\x04'
+        bb += bytes([((dispose & 3) << 2)|(transparent_flag & 1)])  # low bit 1 == transparency,
+        # 2nd bit 1 == user input , next 3 bits, the low two of which are used,
+        # are dispose.
+        bb += intToBin( int(duration*100) ) # in 100th of seconds
+        bb += bytes([transparency_index])
+        bb += b'\x00'  # end
+        return bb
 
 
-def _writeGifToFile(fp, images, durations, loops):
-    """ Given a set of images writes the bytes to the specified stream.
-    """
+    def handleSubRectangles(self, images, subRectangles):
+        """ handleSubRectangles(images)
 
-    # Obtain palette for all images and count each occurance
-    palettes, occur = [], []
-    for im in images:
-        palettes.append( im.palette.getdata()[1] )
-    for palette in palettes:
-        occur.append( palettes.count( palette ) )
+        Handle the sub-rectangle stuff. If the rectangles are given by the
+        user, the values are checked. Otherwise the subrectangles are
+        calculated automatically.
 
-    # Select most-used palette as the global one (or first in case no max)
-    globalPalette = palettes[ occur.index(max(occur)) ]
+        """
 
-    # Init
-    frames = 0
-    firstFrame = True
+        image_info = []
 
+        for im in images:
+            if hasattr(im, 'flags'):
+                image_info.append(im.flags)
 
-    for im, palette in zip(images, palettes):
+        if isinstance(subRectangles, (tuple,list)):
+            # xy given directly
 
-        if firstFrame:
-            # Write header
-
-            # Gather info
-            header = getheaderAnim(im)
-            appext = getAppExt(loops)
-
-            # Write
-            fp.write(header)
-            fp.write(globalPalette)
-            fp.write(appext)
-
-            # Next frame is not the first
-            firstFrame = False
-
-        if True:
-            # Write palette and image data
-
-            # Gather info
-            data = getdata(im)
-            imdes, data = data[0], data[1:]
-            graphext = getGraphicsControlExt(durations[frames])
-            # Make image descriptor suitable for using 256 local color palette
-            lid = getImageDescriptor(im)
-
-            # Write local header
-            if palette != globalPalette:
-                # Use local color palette
-                fp.write(graphext)
-                fp.write(lid) # write suitable image descriptor
-                fp.write(palette) # write local color table
-                fp.write('\x08') # LZW minimum size code
+            # Check xy
+            xy = subRectangles
+            if xy is None:
+                xy = (0,0)
+            if hasattr(xy, '__len__'):
+                if len(xy) == len(images):
+                    xy = [xxyy for xxyy in xy]
+                else:
+                    raise ValueError("len(xy) doesn't match amount of images.")
             else:
-                # Use global color palette
-                fp.write(graphext)
-                fp.write(imdes) # write suitable image descriptor
+                xy = [xy for im in images]
+            xy[0] = (0,0)
 
-            # Write image data
-            for d in data:
-                fp.write(d)
+        else:
+            # Calculate xy using some basic image processing
 
-        # Prepare for next round
-        frames = frames + 1
+            # Check Numpy
+            if np is None:
+                raise RuntimeError("Need Numpy to use auto-subRectangles.")
 
-    fp.write(";")  # end gif
-    return frames
+            # First make numpy arrays if required
+            for i in range(len(images)):
+                im = images[i]
+                if isinstance(im, Image.Image):
+                    tmp = im.convert() # Make without palette
+                    a = np.asarray(tmp)
+                    if len(a.shape)==0:
+                        raise MemoryError("Too little memory to convert PIL image to array")
+                    images[i] = a
+
+            # Determine the sub rectangles
+            images, xy = self.getSubRectangles(images)
+
+        # Done
+        return images, xy, image_info
+
+
+    def getSubRectangles(self, ims):
+        """ getSubRectangles(ims)
+
+        Calculate the minimal rectangles that need updating each frame.
+        Returns a two-element tuple containing the cropped images and a
+        list of x-y positions.
+
+        Calculating the subrectangles takes extra time, obviously. However,
+        if the image sizes were reduced, the actual writing of the GIF
+        goes faster. In some cases applying this method produces a GIF faster.
+
+        """
+
+        # Check image count
+        if len(ims) < 2:
+            return ims, [(0,0) for i in ims]
+
+        # We need numpy
+        if np is None:
+            raise RuntimeError("Need Numpy to calculate sub-rectangles. ")
+
+        # Prepare
+        ims2 = [ims[0]]
+        xy = [(0,0)]
+        t0 = time.time()
+
+        # Iterate over images
+        prev = ims[0]
+        for im in ims[1:]:
+
+            # Get difference, sum over colors
+            diff = np.abs(im-prev)
+            if diff.ndim==3:
+                diff = diff.sum(2)
+            # Get begin and end for both dimensions
+            X = np.argwhere(diff.sum(0))
+            Y = np.argwhere(diff.sum(1))
+            # Get rect coordinates
+            if X.size and Y.size:
+                x0, x1 = int(X[0][0]), int(X[-1][0]+1)
+                y0, y1 = int(Y[0][0]), int(Y[-1][0]+1)
+            else: # No change ... make it minimal
+                x0, x1 = 0, 2
+                y0, y1 = 0, 2
+
+            # Cut out and store
+            im2 = im[y0:y1,x0:x1]
+            prev = im
+            ims2.append(im2)
+            xy.append((x0,y0))
+
+        # Done
+        #print('%1.2f seconds to determine subrectangles of  %i images' %
+        #    (time.time()-t0, len(ims2)) )
+        return ims2, xy
+
+
+    def convertImagesToPIL(self, images, dither, nq=0,images_info=None):
+        """ convertImagesToPIL(images, nq=0)
+
+        Convert images to Paletted PIL images, which can then be
+        written to a single animated GIF.
+
+        """
+
+        # Convert to PIL images
+        images2 = []
+        for im in images:
+            if isinstance(im, Image.Image):
+                images2.append(im)
+            elif np and isinstance(im, np.ndarray):
+                if im.ndim==3 and im.shape[2]==3:
+                    im = Image.fromarray(im,'RGB')
+                elif im.ndim==3 and im.shape[2]==4:
+                    # im = Image.fromarray(im[:,:,:3],'RGB')
+                    self.transparency = True
+                    im = Image.fromarray(im[:,:,:4],'RGBA')
+                elif im.ndim==2:
+                    im = Image.fromarray(im,'L')
+                images2.append(im)
+
+        # Convert to paletted PIL images
+        images, images2 = images2, []
+        if nq >= 1:
+            # NeuQuant algorithm
+            for im in images:
+                im = im.convert("RGBA") # NQ assumes RGBA
+                nqInstance = NeuQuant(im, int(nq)) # Learn colors from image
+                if dither:
+                    im = im.convert("RGB").quantize(palette=nqInstance.paletteImage(),colors=255)
+                else:
+                    im = nqInstance.quantize(im,colors=255)  # Use to quantize the image itself
+
+                self.transparency = True # since NQ assumes transparency
+                if self.transparency:
+                    alpha = im.split()[3]
+                    mask = Image.eval(alpha, lambda a: 255 if a <=128 else 0)
+                    im.paste(255,mask=mask)
+                images2.append(im)
+        else:
+            # Adaptive PIL algorithm
+            AD = Image.ADAPTIVE
+            # for index,im in enumerate(images):
+            for i in range(len(images)):
+                im = images[i].convert('RGB').convert('P', palette=AD, dither=dither,colors=255)
+                if self.transparency:
+                    alpha = images[i].split()[3]
+                    mask = Image.eval(alpha, lambda a: 255 if a <=128 else 0)
+                    im.paste(255,mask=mask)
+                images2.append(im)
+
+        # Done
+        return images2
+
+
+    def writeGifToFile(self, fp, images, durations, loops, xys, disposes):
+        """ writeGifToFile(fp, images, durations, loops, xys, disposes)
+
+        Given a set of images writes the bytes to the specified stream.
+
+        """
+
+        # Obtain palette for all images and count each occurance
+        palettes, occur = [], []
+        for im in images:
+            palettes.append( getheader(im)[0][3] )
+        for palette in palettes:
+            occur.append( palettes.count( palette ) )
+
+        # Select most-used palette as the global one (or first in case no max)
+        globalPalette = palettes[ occur.index(max(occur)) ]
+
+        # Init
+        frames = 0
+        firstFrame = True
+
+
+        for im, palette in zip(images, palettes):
+
+            if firstFrame:
+                # Write header
+
+                # Gather info
+                header = self.getheaderAnim(im)
+                appext = self.getAppExt(loops)
+
+                # Write
+                fp.write(header)
+                fp.write(globalPalette)
+                fp.write(appext)
+
+                # Next frame is not the first
+                firstFrame = False
+
+            if True:
+                # Write palette and image data
+
+                # Gather info
+                data = getdata(im)
+                imdes, data = data[0], data[1:]
+                print("imdes", imdes)
+
+                transparent_flag = 0
+                if self.transparency: transparent_flag = 1
+
+                graphext = self.getGraphicsControlExt(durations[frames],
+                                                        disposes[frames],transparent_flag=transparent_flag,transparency_index=255)
+
+                # Make image descriptor suitable for using 256 local color palette
+                lid = self.getImageDescriptor(im, xys[frames])
+
+                # Write local header
+                if (palette != globalPalette) or (disposes[frames] != 2):
+                    # Use local color palette
+                    fp.write(graphext)
+                    fp.write(lid) # write suitable image descriptor
+                    fp.write(palette) # write local color table
+
+                    # XXX: `data` is writing its own \x08???
+                    # if this starts breaking shit, figure out a better solution
+                    # than just not writing this byte.
+
+                    # fp.write(b'\x08') # LZW minimum size code
+                else:
+                    # Use global color palette
+                    fp.write(graphext)
+                    fp.write(imdes) # write suitable image descriptor
+
+                # Write image data
+                for d in data:
+                    fp.write(d)
+
+            # Prepare for next round
+            frames = frames + 1
+
+        fp.write(b';')  # end gif
+        return frames
+
+
 
 
 ## Exposed functions
 
-def writeGif(fp, images, duration=0.1, repeat=True, dither=False, nq=0):
-    """ writeGif(filename, images, duration=0.1, repeat=True, dither=False)
+def writeGif(fp, images, duration=0.1, repeat=True, dither=False,
+                nq=0, subRectangles=True, dispose=None):
+    """ writeGif(fp, images, duration=0.1, repeat=True, dither=False,
+                    nq=0, subRectangles=True, dispose=None)
 
     Write an animated gif from the specified images.
 
     Parameters
     ----------
-    filename : string
-       The name of the file to write the image to.
+    fp : string
+        file to write the image to.
     images : list
         Should be a list consisting of PIL images or numpy arrays.
         The latter should be between 0 and 255 for integer types, and
@@ -277,7 +519,8 @@ def writeGif(fp, images, duration=0.1, repeat=True, dither=False, nq=0):
     duration : scalar or list of scalars
         The duration for all frames, or (if a list) for each frame.
     repeat : bool or integer
-        The amount of loops. If True, loops infinitetely.
+        The amount of loops. If True or 0, loops infinitely. If False or
+        1, will play once then stop. If some other int N, loops N times.
     dither : bool
         Whether to apply dithering
     nq : integer
@@ -285,7 +528,20 @@ def writeGif(fp, images, duration=0.1, repeat=True, dither=False, nq=0):
         the color palette. This algorithm is superior, but slower than
         the standard PIL algorithm. The value of nq is the quality
         parameter. 1 represents the best quality. 10 is in general a
-        good tradeoff between quality and speed.
+        good tradeoff between quality and speed. When using this option,
+        better results are usually obtained when subRectangles is False.
+    subRectangles : False, True, or a list of 2-element tuples
+        Whether to use sub-rectangles. If True, the minimal rectangle that
+        is required to update each frame is automatically detected. This
+        can give significant reductions in file size, particularly if only
+        a part of the image changes. One can also give a list of x-y
+        coordinates if you want to do the cropping yourself. The default
+        is True.
+    dispose : int
+        How to dispose each frame. 1 means that each frame is to be left
+        in place. 2 means the background color should be restored after
+        each frame. 3 means the decoder should restore the previous frame.
+        If subRectangles==False, the default is 2, otherwise it is 1.
 
     """
 
@@ -296,56 +552,49 @@ def writeGif(fp, images, duration=0.1, repeat=True, dither=False, nq=0):
     # Check images
     images = checkImages(images)
 
+    # Instantiate writer object
+    gifWriter = GifWriter()
+    gifWriter.transparency = False # init transparency flag used in GifWriter functions
+
     # Check loops
     if repeat is False:
         loops = 1
     elif repeat is True:
-        loops = 0 # zero means infinite
+        loops = 0 # 0 means infinite
     else:
         loops = int(repeat)
 
-    # Convert to PIL images
-    images2 = []
-    for im in images:
-        if isinstance(im, Image.Image):
-            images2.append(im)
-        elif np and isinstance(im, np.ndarray):
-            if im.ndim==3 and im.shape[2]==3:
-                im = Image.fromarray(im,'RGB')
-            elif im.ndim==2:
-                im = Image.fromarray(im,'L')
-            images2.append(im)
-
-    # Convert to paletted PIL images
-    images, images2 = images2, []
-    if nq >= 1:
-        # NeuQuant algorithm
-        for im in images:
-            im = im.convert("RGBA") # NQ assumes RGBA
-            nq = NeuQuant(im, int(nq)) # Learn colors from image
-            if dither:
-                im = im.convert("RGB").quantize(palette=nq.paletteImage())
-            else:
-                im = nq.quantize(im)  # Use to quantize the image itself
-            images2.append(im)
-    else:
-        # Adaptive PIL algorithm
-        AD = Image.ADAPTIVE
-        for im in images:
-            im = im.convert('P', palette=AD, dither=dither)
-            images2.append(im)
-
     # Check duration
     if hasattr(duration, '__len__'):
-        if len(duration) == len(images2):
-            durations = [d for d in duration]
+        if len(duration) == len(images):
+            duration = [d for d in duration]
         else:
             raise ValueError("len(duration) doesn't match amount of images.")
     else:
-        duration = [duration for im in images2]
+        duration = [duration for im in images]
 
-    # Write
-    _writeGifToFile(fp, images2, duration, loops)
+    # Check subrectangles
+    if subRectangles:
+        images, xy, images_info = gifWriter.handleSubRectangles(images, subRectangles)
+        defaultDispose = 1 # Leave image in place
+    else:
+        # Normal mode
+        xy = [(0,0) for im in images]
+        defaultDispose = 2 # Restore to background color.
+
+    # Check dispose
+    if dispose is None:
+        dispose = defaultDispose
+    if hasattr(dispose, '__len__'):
+        if len(dispose) != len(images):
+            raise ValueError("len(xy) doesn't match amount of images.")
+    else:
+        dispose = [dispose for im in images]
+
+    # Make images in a format that we can write easy
+    images = gifWriter.convertImagesToPIL(images, dither, nq)
+
+    gifWriter.writeGifToFile(fp, images, duration, loops, xy, dispose)
 
 
 def readGif(filename, asNumpy=True):
@@ -391,8 +640,9 @@ def readGif(filename, asNumpy=True):
     if not asNumpy:
         images2 = images
         images = []
-        for im in images2:
-            images.append( PIL.Image.fromarray(im) )
+        for index,im in enumerate(images2):
+            tmp = PIL.Image.fromarray(im)
+            images.append(tmp)
 
     # Done
     return images
@@ -404,7 +654,7 @@ class NeuQuant:
     samplefac should be an integer number of 1 or higher, 1
     being the highest quality, but the slowest performance.
     With avalue of 10, one tenth of all pixels are used during
-    training. This value seems a nice tradeof between speed
+    training. This value seems a nice tradeoff between speed
     and quality.
 
     colors is the amount of colors to reduce the image to. This
@@ -523,7 +773,8 @@ class NeuQuant:
         # Check image
         if image.size[0] * image.size[1] < NeuQuant.MAXPRIME:
             raise IOError("Image is too small")
-        assert image.mode == "RGBA"
+        if image.mode != "RGBA":
+            raise IOError("Image mode should be RGBA.")
 
         # Initialize
         self.setconstants(samplefac, colors)
@@ -536,12 +787,12 @@ class NeuQuant:
 
     def writeColourMap(self, rgb, outstream):
         for i in range(self.NETSIZE):
-            bb = self.colormap[i,0];
-            gg = self.colormap[i,1];
-            rr = self.colormap[i,2];
-            out.write(rr if rgb else bb)
-            out.write(gg)
-            out.write(bb if rgb else rr)
+            bb = self.colormap[i,0]
+            gg = self.colormap[i,1]
+            rr = self.colormap[i,2]
+            outstream.write(rr if rgb else bb)
+            outstream.write(gg)
+            outstream.write(bb if rgb else rr)
         return self.NETSIZE
 
     def setUpArrays(self):
@@ -581,7 +832,7 @@ class NeuQuant:
         except KeyError:
             length = rad*2-1
             mid = length/2
-            q = np.array(range(mid-1,-1,-1)+range(-1,mid))
+            q = np.array(list(range(mid-1,-1,-1))+list(range(-1,mid)))
             a = alpha*(rad*rad - q*q)/(rad*rad)
             a[mid] = 0
             self.a_s[(alpha, rad)] = a
@@ -659,13 +910,13 @@ class NeuQuant:
         delta = samplepixels / self.NCYCLES
         alpha = self.INITALPHA
 
-        i = 0;
+        i = 0
         rad = biasRadius >> self.RADIUSBIASSHIFT
         if rad <= 1:
             rad = 0
 
-        print "Beginning 1D learning: samplepixels =",samplepixels," rad =", rad
-
+        print("Beginning 1D learning: samplepixels = %1.2f  rad = %i" %
+                                                    (samplepixels, rad) )
         step = 0
         pos = 0
         if lengthcount%NeuQuant.PRIME1 != 0:
@@ -683,7 +934,7 @@ class NeuQuant:
             if i%100 == 99:
                 tmp = '\b'*len(printed_string)
                 printed_string = str((i+1)*100/samplepixels)+"%\n"
-                print tmp + printed_string,
+                print(tmp + printed_string)
             p = self.pixels[pos]
             r = (p >> 16) & 0xff
             g = (p >>  8) & 0xff
@@ -711,7 +962,9 @@ class NeuQuant:
                 rad = biasRadius >> self.RADIUSBIASSHIFT
                 if rad <= 1:
                     rad = 0
-        print "Finished 1D learning: final alpha =",(1.0*alpha)/self.INITALPHA,"!"
+
+        finalAlpha = (1.0*alpha)/self.INITALPHA
+        print("Finished 1D learning: final alpha = %1.2f!" % finalAlpha)
 
     def fix(self):
         for i in range(self.NETSIZE):
@@ -773,10 +1026,10 @@ class NeuQuant:
 
     def quantize(self, image):
         """ Use a kdtree to quickly find the closest palette colors for the pixels """
-        if cKDTree:
+        if get_cKDTree():
             return self.quantize_with_scipy(image)
         else:
-            print 'Scipy not available, falling back to slower version.'
+            print('Scipy not available, falling back to slower version.')
             return self.quantize_without_scipy(image)
 
 
@@ -785,10 +1038,11 @@ class NeuQuant:
         px = np.asarray(image).copy()
         px2 = px[:,:,:3].reshape((w*h,3))
 
+        cKDTree = get_cKDTree()
         kdtree = cKDTree(self.colormap[:,:3],leafsize=10)
         result = kdtree.query(px2)
         colorindex = result[1]
-        print "Distance:", (result[0].sum()/(w*h))
+        print("Distance: %1.2f" % (result[0].sum()/(w*h)) )
         px2[:] = self.colormap[colorindex,:3]
 
         return Image.fromarray(px).convert("RGB").quantize(palette=self.paletteImage())
@@ -807,13 +1061,13 @@ class NeuQuant:
                 try:
                     val = memo[key]
                 except KeyError:
-                    val = self.convert(key)
+                    val = self.convert(*key)
                     memo[key] = val
                 px[i,j,0],px[i,j,1],px[i,j,2] = val
         return Image.fromarray(px).convert("RGB").quantize(palette=self.paletteImage())
 
-    def convert(self, (r, g, b)):
-        i = self.inxsearch(r, g, b)
+    def convert(self, *color):
+        i = self.inxsearch(*color)
         return self.colormap[i,:3]
 
     def inxsearch(self, r, g, b):
@@ -830,5 +1084,7 @@ if __name__ == '__main__':
     im[:,80:120] = 255
     im[-50:-40,:] = 50
 
-    images = [im*1.0, im*0.8, im*0.6, im*0.4, im*0]
-    writeGif('lala3.gif',images, duration=0.5, dither=0)
+    images = [np.uint8(im*1.0), np.uint8(im*0.8), np.uint8(im*0.6), np.uint8(im*0.4), np.uint8(im*0)]
+    writeGif('test.gif',images, duration=0.5, dither=0)
+
+    print('done')
