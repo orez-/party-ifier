@@ -1,3 +1,4 @@
+import contextlib
 import io
 import os.path
 
@@ -105,23 +106,31 @@ def hello():
 @app.route('/result', methods=['POST'])
 def result():
     MAX_LENGTH = 1 * 1000 * 1000
+    CHUNK_READ_SIZE = 1024  # arbitrary afaict
 
     url = flask.request.form['url']
     color = 'color' in flask.request.form
     rotate = 'rotate' in flask.request.form
     fit = 'fit' in flask.request.form
 
-    img_response = requests.get(url, stream=True)
-    content_length = int(img_response.headers['Content-Length'])
-    if int(content_length) > MAX_LENGTH:
-        return "Too big"
+    data = io.BytesIO()
+    with contextlib.closing(requests.get(url, stream=True)) as img_response:
+        content_length = img_response.headers.get('Content-Length')
+        if content_length and int(content_length) > MAX_LENGTH:
+            return "Too big"
 
-    data = io.BytesIO(img_response.raw.read(content_length))
+        size = 0
+        for chunk in img_response.iter_content(CHUNK_READ_SIZE):
+            size += len(chunk)
+            if size > MAX_LENGTH:
+                return "Too big"
 
-    if not color and not rotate:
-        # Why are you even here then.
-        mimetype = img_response.headers['Content-Type']
-        return flask.send_file(data, mimetype=mimetype)
+            data.write(chunk)
+
+        if not color and not rotate:
+            # Why are you even here then.
+            mimetype = img_response.headers['Content-Type']
+            return flask.send_file(data, mimetype=mimetype)
 
     gif_data = party(data, color=color, rotate=rotate, fit=fit)
     return flask.send_file(gif_data, mimetype='image/gif')
