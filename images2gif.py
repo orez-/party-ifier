@@ -458,7 +458,6 @@ class GifWriter:
                 # Gather info
                 data = getdata(im)
                 imdes, data = data[0], data[1:]
-                print("imdes", imdes)
 
                 transparent_flag = 0
                 if self.transparency: transparent_flag = 1
