@@ -367,6 +367,9 @@ class GifWriter:
         images2 = []
         for im in images:
             if isinstance(im, Image.Image):
+                # XXX: this is probably subtly wrong.
+                if im.mode == "RGBA" or "transparency" in im.info:
+                    self.transparency = True
                 images2.append(im)
             elif np and isinstance(im, np.ndarray):
                 if im.ndim==3 and im.shape[2]==3:
@@ -462,8 +465,12 @@ class GifWriter:
                 transparent_flag = 0
                 if self.transparency: transparent_flag = 1
 
-                graphext = self.getGraphicsControlExt(durations[frames],
-                                                        disposes[frames],transparent_flag=transparent_flag,transparency_index=255)
+                graphext = self.getGraphicsControlExt(
+                    durations[frames],
+                    disposes[frames],
+                    transparent_flag=transparent_flag,
+                    transparency_index=255,
+                )
 
                 # Make image descriptor suitable for using 256 local color palette
                 lid = self.getImageDescriptor(im, xys[frames])
@@ -572,14 +579,15 @@ def writeGif(fp, images, duration=0.1, repeat=True, dither=False,
     else:
         duration = [duration for im in images]
 
-    # Check subrectangles
-    if subRectangles:
-        images, xy, images_info = gifWriter.handleSubRectangles(images, subRectangles)
-        defaultDispose = 1 # Leave image in place
-    else:
-        # Normal mode
-        xy = [(0,0) for im in images]
-        defaultDispose = 2 # Restore to background color.
+    # # Check subrectangles
+    # XXX: dis broken do not use.
+    # if subRectangles:
+    #     images, xy, images_info = gifWriter.handleSubRectangles(images, subRectangles)
+    #     defaultDispose = 1 # Leave image in place
+    # else:
+    #     # Normal mode
+    xy = [(0,0) for im in images]
+    defaultDispose = 2 # Restore to background color.
 
     # Check dispose
     if dispose is None:

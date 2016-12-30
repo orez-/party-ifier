@@ -1,7 +1,6 @@
 # party-ifier
 :tada: Make party versions of chat emoticons
 
-[See it in action!](https://party-ifier.herokuapp.com/)
+Experimental: Also works on animated gifs!
 
-#### Potential next steps
-- Work on animated gifs.
+[See it in action!](https://party-ifier.herokuapp.com/)
