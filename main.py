@@ -173,6 +173,10 @@ def hello():
               <label><input name='fit' type='checkbox' checked> Smart Fit</label><br>
               <input type='submit'>
             </form>
+            <br>
+            <p style='font-size: 12px'>
+            See the <a href='https://github.com/orez-/party-ifier'>source</a>!
+            </p>
           </body>
         </html>
     '''.format(default_pic=default_pic)
