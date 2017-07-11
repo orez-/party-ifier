@@ -5,6 +5,7 @@ import math
 import os.path
 
 import PIL.Image
+import PIL.ImageDraw
 import PIL.ImageOps
 import flask
 import requests
@@ -75,11 +76,26 @@ def crop_transparency(frames):
     return [frame.crop(crop_box) for frame in frames]
 
 
-def party_static(im, rotate, color, fit):
+def get_circular_crop(image):
+    # https://stackoverflow.com/a/890114
+    size = image.size
+    mask = PIL.Image.new('L', size, 0)
+    draw = PIL.ImageDraw.Draw(mask)
+    draw.ellipse((0, 0) + size, fill=255)
+
+    output = PIL.ImageOps.fit(image, mask.size, centering=(0.5, 0.5))
+    output.putalpha(mask)
+    return output
+
+
+def party_static(im, rotate, color, fit, crop_circular):
     width, height = im.size
     new_image = PIL.Image.new('RGBA', im.size, (255, 255, 255, 0))
     mask = im if im.mode == 'RGBA' else None
     new_image.paste(im, ((width - im.width) // 2, ((height - im.height) // 2)), mask=mask)
+
+    if crop_circular:
+        new_image = get_circular_crop(new_image)
 
     frames = [new_image] * len(colors)
     frames = [
@@ -171,6 +187,7 @@ def hello():
               <label><input name='color' type='checkbox' checked> Color</label><br>
               <label><input name='rotate' type='checkbox' checked> Rotate</label><br>
               <label><input name='fit' type='checkbox' checked> Smart Fit</label><br>
+              <label><input name='crop_circular' type='checkbox'> Crop center</label><br>
               <input type='submit'>
             </form>
             <br>
@@ -211,6 +228,7 @@ def result():
     color = 'color' in flask.request.form
     rotate = 'rotate' in flask.request.form
     fit = 'fit' in flask.request.form
+    crop_circular = 'crop_circular' in flask.request.form
 
     try:
         with contextlib.closing(requests.get(url, stream=True)) as img_response:
@@ -229,7 +247,7 @@ def result():
         frames = gifextract.processImage(im)
         gif_data = party_animated(frames, color=color, rotate=rotate, fit=fit)
     else:
-        gif_data = party_static(im, color=color, rotate=rotate, fit=fit)
+        gif_data = party_static(im, color=color, rotate=rotate, fit=fit, crop_circular=crop_circular)
     return flask.send_file(gif_data, mimetype='image/gif')
 
 
