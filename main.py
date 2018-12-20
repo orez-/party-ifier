@@ -171,32 +171,13 @@ def get_gif(frames, duration=0.0625):
     return gif_data
 
 
-app = flask.Flask(__name__)
+app = flask.Flask(__name__, static_folder='')
 app.debug = True
 
 
 @app.route('/', methods=['GET'])
 def hello():
-    default_pic = 'https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png'
-    return '''
-        <html>
-          <body>
-            <form action='result' method='post'>
-              <h3>Party-ifier!</h3>
-              <input name='url' style='width: 500px' type='text' value='{default_pic}'><br>
-              <label><input name='color' type='checkbox' checked> Color</label><br>
-              <label><input name='rotate' type='checkbox' checked> Rotate</label><br>
-              <label><input name='fit' type='checkbox' checked> Smart Fit</label><br>
-              <label><input name='crop_circular' type='checkbox'> Crop center</label><br>
-              <input type='submit'>
-            </form>
-            <br>
-            <p style='font-size: 12px'>
-            See the <a href='https://github.com/orez-/party-ifier'>source</a>!
-            </p>
-          </body>
-        </html>
-    '''.format(default_pic=default_pic)
+    return app.send_static_file('index.html')
 
 
 class TooBig(ValueError):
