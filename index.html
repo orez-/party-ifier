@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title>Party-ifier! 🎉</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="Make party versions of chat emoticons.">
+    <link href="https://fonts.googleapis.com/css?family=Pacifico|Inconsolata" rel="stylesheet">
+    <style>
+      html {
+        background:aliceblue;
+        color: rgb(58, 58, 58);
+        font-family: "Inconsolata", monospace;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+      h1 {
+        color: black;
+        font-family: "Pacifico", cursive;
+        font-size: 40px;
+        margin: 0 0 16px;
+        text-align: center;
+      }
+      main {
+        background: white;
+        border-radius: 12px;
+        font-size: 20px;
+        margin: 0 auto;
+        max-width: 800px;
+        padding: 24px;
+      }
+      footer {
+        padding: 20px;
+        text-align: center;
+      }
+      footer a {
+        color: black;
+      }
+      label {
+        display: block;
+      }
+      label:hover {
+        cursor: pointer;
+      }
+      input[type="search"],
+      input[type="text"] {
+        border-radius: 4px;
+        border: 1px solid rgb(179, 202, 224);
+        box-sizing: border-box;
+        color: inherit;
+        font-size: 14px;
+        margin: 12px 0 24px;
+        padding: 8px;
+        max-width: 100%;
+        width: 100%;
+      }
+      input[type="checkbox"] {
+        margin: 0 0 0 5px;
+        font-size: 150%;
+        padding: 0;
+      }
+      input[type="submit"] {
+        background:aliceblue;
+        border-radius: 4px;
+        border: 1px solid rgb(179, 202, 224);
+        color: inherit;
+        display: block;
+        font-family: inherit;
+        font-size: inherit;
+        margin: 0 auto;
+        padding: 8px 16px;
+        text-align: center;
+      }
+      input[type="submit"]:hover {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Party-ifier! 🎉</h1>
+    <main>
+      <form action="result" method="post">
+        <label>
+          Image url
+          <input
+            value="https://s3.amazonaws.com/uploads.hipchat.com/22794/645828/YT5so07G5nkokve/pancake-1434994127%402x.png"
+            name="url" type="search"><br>
+        </label>
+        <label><input name="color" type="checkbox" checked> Color</label><br>
+        <label><input name="rotate" type="checkbox" checked> Rotate</label><br>
+        <label><input name="fit" type="checkbox" checked> Smart Fit</label><br>
+        <label><input name="crop_circular" type="checkbox"> Crop center</label><br>
+        <input type="submit">
+      </form>
+    </main>
+    <footer>
+      See the <a href="https://github.com/orez-/party-ifier">source</a>!
+    </footer>
+  </body>
+</html>
