@@ -172,7 +172,6 @@ def get_gif(frames, duration=0.0625):
 
 
 app = flask.Flask(__name__, static_folder='static')
-app.debug = True
 
 
 @app.route('/', methods=['GET'])
@@ -214,6 +213,7 @@ def result():
     try:
         with contextlib.closing(requests.get(url, stream=True)) as img_response:
             data = stream_image(img_response)
+            data.seek(0)
             if not color and not rotate:
                 # Why are you even here then.
                 mimetype = img_response.headers['Content-Type']
