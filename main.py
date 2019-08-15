@@ -171,7 +171,7 @@ def get_gif(frames, duration=0.0625):
     return gif_data
 
 
-app = flask.Flask(__name__, static_folder='')
+app = flask.Flask(__name__, static_folder='static')
 app.debug = True
 
 
