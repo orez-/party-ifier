@@ -77,27 +77,36 @@ def crop_transparency(frames):
 
 
 def get_circular_crop(image):
+    """
+    Crop the corners of the image to create a central ellipse.
+
+    Very rectangular images look awful when spinning.
+    Cutting the corners improves the appearance a little.
+    """
     # https://stackoverflow.com/a/890114
     size = image.size
-    mask = PIL.Image.new('L', size, 0)
-    draw = PIL.ImageDraw.Draw(mask)
+    image = image.convert("RGBA")
+    img_mask = PIL.Image.new('L', size, 0)
+    img_mask.paste(255, mask=image)
+
+    ring = PIL.Image.new('L', size, 0)
+    draw = PIL.ImageDraw.Draw(ring)
     draw.ellipse((0, 0) + size, fill=255)
 
-    output = PIL.ImageOps.fit(image, mask.size, centering=(0.5, 0.5))
-    output.putalpha(mask)
-    return output
+    mask = PIL.Image.new('L', size, 0)
+    mask.paste(img_mask, mask=ring)
+
+    image.putalpha(mask)
+    return image
 
 
 def party_static(im, rotate, color, fit, crop_circular):
     width, height = im.size
-    new_image = PIL.Image.new('RGBA', im.size, (255, 255, 255, 0))
-    mask = im if im.mode == 'RGBA' else None
-    new_image.paste(im, ((width - im.width) // 2, ((height - im.height) // 2)), mask=mask)
 
     if crop_circular:
-        new_image = get_circular_crop(new_image)
+        im = get_circular_crop(im)
 
-    frames = [new_image] * len(colors)
+    frames = [im] * len(colors)
     frames = [
         party_img(
             frame,
