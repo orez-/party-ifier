@@ -92,13 +92,15 @@
   <body>
     <h1>Party-ifier!<i>🎉</i></h1>
     <main>
-      <form action="result" method="post">
+      <form action="result" enctype="multipart/form-data" method="post">
         <label>
           Image url
           <input
             value="https://emojipedia-us.s3.dualstack.us-west-1.amazonaws.com/thumbs/240/apple/198/party-popper_1f389.png"
             name="url" type="search"><br>
         </label>
+        <label>Or, upload a file <input name="upload" type="file" accept="image/*"></label><br>
+        <hr>
         <label><input name="color" type="checkbox" checked> Color</label><br>
         <label><input name="rotate" type="checkbox" checked> Rotate</label><br>
         <label><input name="fit" type="checkbox" checked> Smart Fit</label><br>

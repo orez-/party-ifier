@@ -8,7 +8,9 @@ import requests
 from . import partyifier
 
 
+MAX_LENGTH = 1 * 1024 * 1024
 app = flask.Flask(__name__, static_folder='../static')
+app.config['MAX_CONTENT_LENGTH'] = MAX_LENGTH
 
 
 @app.route('/', methods=['GET'])
@@ -21,7 +23,6 @@ class TooBig(ValueError):
 
 
 def stream_image(img_response):
-    MAX_LENGTH = 1 * 1000 * 1000
     CHUNK_READ_SIZE = 1024  # arbitrary afaict
 
     data = io.BytesIO()
@@ -41,22 +42,28 @@ def stream_image(img_response):
 
 @app.route('/result', methods=['POST'])
 def result():
-    url = flask.request.form['url']
     color = 'color' in flask.request.form
     rotate = 'rotate' in flask.request.form
     fit = 'fit' in flask.request.form
     crop_circular = 'crop_circular' in flask.request.form
 
-    try:
-        with contextlib.closing(requests.get(url, stream=True)) as img_response:
-            data = stream_image(img_response)
-            data.seek(0)
-            if not color and not rotate:
-                # Why are you even here then.
-                mimetype = img_response.headers['Content-Type']
-                return flask.send_file(data, mimetype=mimetype)
-    except TooBig:
-        return "Too big"
+    file = flask.request.files.get('upload')
+    if file and file.filename != '':
+        data = file.stream
+    else:
+        url = flask.request.form['url']
+        try:
+            with contextlib.closing(requests.get(url, stream=True)) as img_response:
+                data = stream_image(img_response)
+                data.seek(0)
+                if not color and not rotate:
+                    # Why are you even here then.
+                    mimetype = img_response.headers['Content-Type']
+                    return flask.send_file(data, mimetype=mimetype)
+        except TooBig:
+            return "Too big"
+        except requests.exceptions.RequestException:
+            return "Bad url"
 
     im = PIL.Image.open(data)
     gif_data = partyifier.partyify(
