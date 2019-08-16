@@ -1,4 +1,3 @@
-import contextlib
 import io
 import itertools
 import math
@@ -7,13 +6,10 @@ import os.path
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageOps
-import flask
-import requests
 
-import gifextract
-import images2gif
-
-import util
+from . import gifextract
+from . import images2gif
+from . import util
 
 
 PARTY_SPEED = 60
@@ -134,7 +130,9 @@ def adjust_low_durations(frames):
         yield frame, i, duration
 
 
-def party_animated(frames, rotate, color, fit):
+def party_animated(frames, rotate, color, fit, crop_circular):
+    if crop_circular:
+        frames = ((get_circular_crop(frame), duration) for frame, duration in frames)
     frames = list(frames)
     total_duration = sum(dur for _, dur in frames)
     # cycle to get all the colors at least once
@@ -180,66 +178,12 @@ def get_gif(frames, duration=0.0625):
     return gif_data
 
 
-app = flask.Flask(__name__, static_folder='static')
-
-
-@app.route('/', methods=['GET'])
-def hello():
-    return app.send_static_file('index.html')
-
-
-class TooBig(ValueError):
-    ...
-
-
-def stream_image(img_response):
-    MAX_LENGTH = 1 * 1000 * 1000
-    CHUNK_READ_SIZE = 1024  # arbitrary afaict
-
-    data = io.BytesIO()
-    content_length = img_response.headers.get('Content-Length')
-    if content_length and int(content_length) > MAX_LENGTH:
-        raise TooBig("Too big")
-
-    size = 0
-    for chunk in img_response.iter_content(CHUNK_READ_SIZE):
-        size += len(chunk)
-        if size > MAX_LENGTH:
-            raise TooBig("Too big")
-
-        data.write(chunk)
-    return data
-
-
-@app.route('/result', methods=['POST'])
-def result():
-    url = flask.request.form['url']
-    color = 'color' in flask.request.form
-    rotate = 'rotate' in flask.request.form
-    fit = 'fit' in flask.request.form
-    crop_circular = 'crop_circular' in flask.request.form
-
-    try:
-        with contextlib.closing(requests.get(url, stream=True)) as img_response:
-            data = stream_image(img_response)
-            data.seek(0)
-            if not color and not rotate:
-                # Why are you even here then.
-                mimetype = img_response.headers['Content-Type']
-                return flask.send_file(data, mimetype=mimetype)
-    except TooBig:
-        return "Too big"
-
-    im = PIL.Image.open(data)
+def partyify(im, *, color, rotate, fit, crop_circular):
     # XXX: PIL's `is_animated` on gifs is broken as hell. Seeking past
     # the first frame then seeking back mangles those frames.
     if getattr(im, 'is_animated', False):
         frames = gifextract.processImage(im)
-        gif_data = party_animated(frames, color=color, rotate=rotate, fit=fit)
+        gif_data = party_animated(frames, color=color, rotate=rotate, fit=fit, crop_circular=crop_circular)
     else:
         gif_data = party_static(im, color=color, rotate=rotate, fit=fit, crop_circular=crop_circular)
-    return flask.send_file(gif_data, mimetype='image/gif')
-
-
-# if __name__ == '__main__':
-#     app.run()
+    return gif_data
